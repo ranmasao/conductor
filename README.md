@@ -26,9 +26,10 @@ A ticket that is not actually complete must remain in `todo`. If implementation 
 3. Run Conductor from the root of the project checkout (`$PWD` is the workspace and the default configuration file is `$PWD/.env`):
 
 ```sh
-/path/to/conductor/conductor.sh --once
-/path/to/conductor/conductor.sh --watch
+/path/to/conductor/conductor.sh
 ```
+
+The default mode is a foreground polling loop. Conductor checks for remote changes, then sleeps for `POLL_INTERVAL` seconds before checking again. Use `--once` for a single synchronization/execution pass. `--watch` remains available as an explicit alias for the default polling mode.
 
 `REMOTE_BRANCH` defaults to the currently checked-out branch. If it is set explicitly, the current branch must match it. `--env FILE` can override the project-local configuration path when needed.
 
