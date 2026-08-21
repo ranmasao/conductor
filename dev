@@ -35,6 +35,14 @@ require_venv() {
   fi
 }
 
+require_conductor() {
+  require_venv
+  if [[ ! -x "$CONDUCTOR" ]]; then
+    printf 'dev: installed conductor CLI is missing; run ./dev setup first\n' >&2
+    exit 1
+  fi
+}
+
 setup() {
   if [[ ! -x "$PYTHON" ]]; then
     "${PYTHON_BIN:-python3}" -m venv "$VENV"
@@ -97,8 +105,8 @@ case "$command" in
   lint) lint "$@" ;;
   check) check "$@" ;;
   run)
-    require_venv
-    (cd "$ROOT" && "$CONDUCTOR" "$@")
+    require_conductor
+    exec "$CONDUCTOR" "$@"
     ;;
   clean) clean "$@" ;;
   purge) purge "$@" ;;
