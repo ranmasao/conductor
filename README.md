@@ -2,7 +2,7 @@
 
 Conductor is a minimal bootstrap orchestrator for a software-development workflow. Product code remains on the configured product branch and canonical workflow files live only on `CONTROL_BRANCH` (default `conductor/control`) in a Conductor-owned worktree outside the product checkout.
 
-During this transitional phase, worker dispatch is deliberately gated. Conductor now maintains three physically separate Git surfaces: the operator checkout, the canonical control worktree, and a per-ticket execution worktree. Later execution phases must define how workers report and mutate canonical control state.
+Conductor maintains three physically separate Git surfaces: the operator checkout, the canonical control worktree, and a per-ticket execution worktree. Workers edit implementation files and provide a semantic claim; Conductor checkpoints, publishes, reports, and mutates workflow state.
 
 ## Usage
 
@@ -71,8 +71,9 @@ external Architect/Reviewer
     -> Conductor notices a new repository revision or todo generation
     -> fast-forward pull/sync
     -> Conductor selects one runnable todo ticket
-    -> worker dispatch remains gated during v0.4 construction
-    -> later execution phases reconnect worker reporting
+    -> Conductor runs one worker in an isolated execution worktree
+    -> Conductor checkpoints and publishes the execution branch
+    -> Conductor persists the report and submits completed work to review
     -> external Architect/Reviewer inspects the result
 ```
 
@@ -90,20 +91,20 @@ A ticket that is not actually complete must remain in `todo`. If implementation 
 - Ticket frontmatter uses the vendored, restricted NanoYAML N0 implementation; Conductor does not depend on a general YAML library or support free-form tickets.
 - Ticket identity is the filename stem. Conductor strictly validates NanoYAML N0 frontmatter, ticket metadata, globally unique IDs, dependency references, and the dependency DAG before launching a worker.
 - Only `todo` tickets whose dependencies are in `done` are runnable. `review` does not satisfy dependencies. Conductor sorts runnable IDs and selects exactly one ticket for a potential worker dispatch.
-- Conductor owns ticket discovery, parsing, graph validation, runnable determination, deterministic selection, and selected-ticket execution binding. Worker dispatch remains gated while the v0.4 execution and reporting boundaries are constructed.
+- Conductor owns ticket discovery, parsing, graph validation, runnable determination, deterministic selection, selected-ticket execution binding, checkpoint commits, branch pushes, reports, and ticket movement.
 - Conductor owns worker prompt construction. The worker receives one exact implementation assignment, a small worker-only contract, and only relevant implementation context. Canonical workflow paths, ticket paths, kanban, and Git/execution topology are Conductor details, not worker API.
 - Fresh, resume, rework, and recovery prompts share one contract and differ only through a narrow work directive and relevant optional context. Ticket content is opaque assigned data; it cannot authorize canonical workflow mutation.
 - Worker output is free-form unless it is exactly one strictly validated `conductor_report` tool event. `WorkerClaim` is untrusted semantic egress with `completed`, `incomplete`, or `blocked` outcomes; missing, malformed, or duplicate reports are protocol failures and do not mutate workflow.
-- Conductor supplies an ephemeral reserved OpenCode tool configuration for each worker process. The worker runs in the validated execution workspace, while Conductor keeps process status separate from the worker claim.
+- Conductor supplies an ephemeral reserved OpenCode tool configuration for each worker process. The worker runs in the validated execution workspace, while Conductor keeps process status separate from the worker claim and owns the resulting checkpoint commit and branch push.
 - `ExecutionResult` is the canonical Conductor-owned interpretation of one execution. `ExecutionReport` is its durable structured record under `executions/<ticket-id>/<execution-id>.json` in the control worktree. Tickets remain specifications, not execution logs; `questions` and `remaining` remain structured execution data.
 - Conductor derives an immutable `ExecutionPlan` from one internally consistent observed snapshot. The plan carries repository observation identity and the exact selected ticket; runtime consumes that exact ticket decision rather than performing an independent selection.
 - Execution plans and status snapshots expose separate nested `observation.code` and `observation.control` Git identities. A work generation combines code and control revision identity with a deterministic fingerprint of canonical ticket files under `TODO_PATH`.
 - Conductor persists the handled generation, so unchanged todo is not redispatched on every poll or after restart.
 - Dirty and divergent Git states are diagnosed with paths and topology, but Conductor never automatically destroys local changes or reconciles divergent history.
 - Git synchronization and workflow validity are separate boundaries: `merge_pending` covers only an unproven fast-forward transaction and is cleared once the intended HEAD is verified. A later workflow blocker is derived from current control contents and does not reopen that Git transaction.
-- Later execution phases will define worker failure and recovery semantics. Phase 1 does not start worker execution.
+- Completed execution submits the same ticket from todo to review. Incomplete, blocked, and failed executions preserve the ticket in todo while retaining their execution branch and report. No automatic retry or recovery reconciliation is performed.
 - Conductor stores per-repository iteration state atomically under `$XDG_STATE_HOME/conductor`, or `~/.local/state/conductor` when XDG_STATE_HOME is unset. Set `STATE_DIR` to override it. Lock files are stored under its `locks` subdirectory.
-- Worker dispatch is deliberately gated during this transitional phase because workers cannot safely mutate the separate canonical control worktree. Later execution architecture must reconnect this boundary without giving workers cross-plane Git access.
+- Workers never commit, push, merge, rebase, switch branches, move tickets, write reports, or integrate into the product branch. Product-branch integration remains Conductor-owned but review acceptance and automatic integration are still gated.
 - A kernel-managed `flock` prevents concurrent Conductor instances for the same checkout.
 - Agent sessions are intentionally ephemeral for now.
-- Workers remain gated and receive no control-worktree paths, control branch topology, or ticket source paths. A worker, when re-enabled in a later phase, will use only the execution worktree.
+- Workers receive no control-worktree paths, control branch topology, ticket source paths, execution IDs, or branch identity. Each later attempt keeps the same ticket and execution branch while receiving a new execution ID and report.
