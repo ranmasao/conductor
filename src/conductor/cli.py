@@ -884,6 +884,13 @@ class Conductor:
             raise ConductorError(
                 "invalid state: execution workspace binding is incomplete"
             )
+        if "execution_remote_head" in state and not (
+            state["execution_remote_head"] is None
+            or isinstance(state["execution_remote_head"], str)
+        ):
+            raise ConductorError(
+                "invalid state: execution remote revision identity is invalid"
+            )
 
     def _save_state(self, phase: str, **fields: object) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -1446,6 +1453,15 @@ class Conductor:
                 if existing_lineage
                 else local_head
             )
+            execution_remote_head = (
+                self._state.get("execution_remote_head")
+                if pending_agent_execution
+                else self._execution_remote_head(f"conductor/work/{selected_ticket.id}")
+            )
+            if execution_remote_head is not None and not isinstance(
+                execution_remote_head, str
+            ):
+                raise ConductorError("invalid persisted execution remote identity")
             execution_id = (
                 self._state.get("execution_id")
                 if pending_agent_execution
@@ -1473,6 +1489,7 @@ class Conductor:
                     self.execution_worktree_root / "work" / selected_ticket.id
                 ),
                 execution_id=execution_id,
+                execution_remote_head=execution_remote_head,
             )
 
         try:
@@ -1495,6 +1512,9 @@ class Conductor:
             execution_id = self._state.get("execution_id")
         if not isinstance(execution_id, str) or not execution_id:
             execution_id = new_execution_id()
+        execution_remote_head = self._state.get("execution_remote_head")
+        if "execution_remote_head" not in self._state:
+            execution_remote_head = self._execution_remote_head(workspace.branch)
         prompt = build_worker_prompt(
             WorkerPromptInput(assignment=selected_ticket.body, directive=directive)
         )
@@ -1506,6 +1526,7 @@ class Conductor:
             execution_branch=workspace.branch,
             execution_path=str(workspace.path),
             execution_id=execution_id,
+            execution_remote_head=execution_remote_head,
         )
         worker_run = self._run_worker(workspace, prompt)
         execution_result = build_execution_report(
@@ -1531,7 +1552,11 @@ class Conductor:
             f"{checkpoint.after_head[:12]}"
         )
         try:
-            self._publish_execution_branch(workspace, checkpoint.after_head)
+            self._publish_execution_branch(
+                workspace,
+                checkpoint.after_head,
+                self._state.get("execution_remote_head"),
+            )
         except (ConductorError, OSError) as error:
             raise ConductorError(
                 f"execution branch publication failed: {error}"
@@ -1629,11 +1654,19 @@ class Conductor:
         return workspace
 
     def _publish_execution_branch(
-        self, workspace: ExecutionWorkspace, checkpoint_head: str
+        self,
+        workspace: ExecutionWorkspace,
+        checkpoint_head: str,
+        expected_remote_head: str | None,
     ) -> None:
         observed = _git(workspace.path, "rev-parse", "HEAD").stdout.strip()
         if observed != checkpoint_head:
             raise ConductorError("execution HEAD changed before branch publication")
+        observed_remote_head = self._execution_remote_head(workspace.branch)
+        if observed_remote_head != expected_remote_head:
+            raise ConductorError(
+                "execution branch remote changed during worker execution"
+            )
         pushed = _git(
             workspace.path,
             "push",
@@ -1643,6 +1676,21 @@ class Conductor:
         )
         if pushed.returncode:
             raise ConductorError(pushed.stderr.strip() or "unknown Git push error")
+
+    def _execution_remote_head(self, branch: str) -> str | None:
+        remote = _git(
+            self.repo,
+            "ls-remote",
+            self.remote_name,
+            f"refs/heads/{branch}",
+            check=False,
+        )
+        if remote.returncode:
+            raise ConductorError(
+                remote.stderr.strip() or "cannot observe execution branch remote"
+            )
+        fields = remote.stdout.split()
+        return fields[0] if fields else None
 
     def _apply_execution_lifecycle(self, report: ExecutionReport) -> str:
         self._validate_control_worktree()
