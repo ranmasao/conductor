@@ -32,14 +32,19 @@ migrate tickets, commit, or push. Existing projects must explicitly migrate thei
 workflow files to the control branch first; the product checkout must not retain a
 second managed workflow copy.
 
-`conductor init` creates project-local `.conductor/templates` and
-`.conductor/generated` protocol directories, seeds missing Architect and Reviewer
-templates, and renders their generated skills. `conductor render` regenerates the
-derived skills from the existing project-owned templates and the effective safe
-configuration. `conductor render --check` verifies freshness without writing.
-The `.env` file remains runtime configuration and agents must not read it;
-generated files should not be edited directly. These commands do not attach the
-control worktree or mutate workflow state.
+`conductor init` creates project-local `.conductor/templates`, seeds missing
+Architect and Reviewer templates plus `artifacts.toml`, and renders their skills
+to the declared project targets. `conductor render` regenerates those derived
+skills from the existing project-owned templates and effective safe configuration.
+`conductor render --check` verifies freshness without writing. The `.env` file
+remains runtime configuration and agents must not read it. Templates stay under
+`.conductor`; rendered files are ordinary project artifacts and should not be
+edited directly. These commands do not attach the control worktree or mutate
+workflow state, and they perform no Git admission.
+
+Rendered skills are materialized at the targets declared by
+`.conductor/templates/artifacts.toml`; `.conductor/generated` is obsolete and is
+not created, used, or automatically deleted.
 
 The default `run` mode is a foreground polling loop. Use `run --once` for one synchronization/execution pass. `check` validates setup without running workflow. `status` is read-only and reports what Conductor observes. `plan` is read-only and reports what Conductor would decide from one optimistic consistent snapshot; its output includes the branch, local HEAD, known remote ref, and known remote HEAD used for the decision. Neither command fetches or writes durable state. Retry if project state changes continuously while a snapshot is being collected. `--env FILE` selects a configuration file instead of `$PWD/.env`, and `--version` prints the installed version.
 
