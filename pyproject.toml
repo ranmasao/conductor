@@ -22,7 +22,7 @@ conductor = "conductor.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-conductor = ["default_templates/artifacts.toml", "default_templates/**/*.tmpl"]
+conductor = ["default_templates/.env.example", "default_templates/artifacts.toml", "default_templates/**/*.tmpl"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
