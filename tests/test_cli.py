@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
@@ -499,3 +500,61 @@ def test_retry_without_ticket_rejects_non_tty(monkeypatch, tmp_path):
 
     with pytest.raises(ConductorError, match="interactive retry requires a terminal"):
         conductor.retry()
+
+
+def test_interactive_retry_selects_only_requested_candidate(monkeypatch):
+    conductor = object.__new__(Conductor)
+    candidates = (("T-1", "one", "first"), ("T-2", "two", "second"))
+    selected = []
+    monkeypatch.setattr(conductor, "_retry_candidates", lambda: candidates)
+    monkeypatch.setattr(conductor, "_lock", lambda: nullcontext())
+    monkeypatch.setattr(
+        conductor,
+        "run_once",
+        lambda: selected.append(conductor._retry_ticket_id) or 0,
+    )
+    monkeypatch.setattr(os, "isatty", lambda _fd: True)
+    monkeypatch.setattr(sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(sys.stdout, "fileno", lambda: 1)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "2")
+
+    assert conductor.retry() == 0
+    assert selected == ["T-2"]
+
+
+def test_interactive_retry_requires_explicit_enter_for_single_candidate(monkeypatch):
+    conductor = object.__new__(Conductor)
+    selected = []
+    monkeypatch.setattr(
+        conductor, "_retry_candidates", lambda: (("T-1", "one", "first"),)
+    )
+    monkeypatch.setattr(conductor, "_lock", lambda: nullcontext())
+    monkeypatch.setattr(
+        conductor,
+        "run_once",
+        lambda: selected.append(conductor._retry_ticket_id) or 0,
+    )
+    monkeypatch.setattr(os, "isatty", lambda _fd: True)
+    monkeypatch.setattr(sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(sys.stdout, "fileno", lambda: 1)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "")
+
+    assert conductor.retry() == 0
+    assert selected == ["T-1"]
+
+
+def test_interactive_retry_rejects_invalid_selection_without_running(monkeypatch):
+    conductor = object.__new__(Conductor)
+    ran = []
+    monkeypatch.setattr(
+        conductor, "_retry_candidates", lambda: (("T-1", "one", "first"),)
+    )
+    monkeypatch.setattr(conductor, "run_once", lambda: ran.append(True) or 0)
+    monkeypatch.setattr(os, "isatty", lambda _fd: True)
+    monkeypatch.setattr(sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(sys.stdout, "fileno", lambda: 1)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "9")
+
+    with pytest.raises(ConductorError, match="invalid retry selection"):
+        conductor.retry()
+    assert ran == []
