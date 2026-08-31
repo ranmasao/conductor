@@ -97,6 +97,8 @@ external Architect/Reviewer
     -> Conductor checkpoints and publishes the execution branch
     -> Conductor persists the report and submits completed work to review
     -> external Architect/Reviewer inspects the result
+    -> reviewer moves accepted work to accepted
+    -> Conductor fast-forwards the published product branch and submits it to done
 ```
 
 Workers report semantic outcomes; Conductor interprets them and owns ticket
@@ -114,7 +116,7 @@ blocked, or failed work preserves the same ticket in `todo`.
 - The execution base identifies the ticket lineage, while the persisted control revision identifies the current scheduling attempt. A new generation may refresh control authority without creating a new branch; an interrupted attempt must retain and revalidate its original authority.
 - Ticket frontmatter uses the vendored, restricted NanoYAML N0 implementation; Conductor does not depend on a general YAML library or support free-form tickets.
 - Ticket identity is the filename stem. Conductor strictly validates NanoYAML N0 frontmatter, ticket metadata, globally unique IDs, dependency references, and the dependency DAG before launching a worker.
-- Only `todo` tickets whose dependencies are in `done` are runnable. `review` does not satisfy dependencies. Conductor sorts runnable IDs and selects exactly one ticket for a potential worker dispatch.
+- Tickets move through `backlog -> todo -> review -> accepted -> done`. `review` awaits reviewer judgement; `accepted` awaits Conductor-owned integration; `done` means the accepted checkpoint is present in published product history. Only `todo` tickets whose dependencies are in `done` are runnable. `review` and `accepted` do not satisfy dependencies. Conductor is serial across review and integration and selects exactly one ticket for a potential worker dispatch.
 - Conductor owns ticket discovery, parsing, graph validation, runnable determination, deterministic selection, selected-ticket execution binding, checkpoint commits, branch pushes, reports, and ticket movement. Ticket population is data, not initialization state; an empty valid workflow is supported.
 - Conductor owns worker prompt construction. The worker receives one exact implementation assignment, a small worker-only contract, and only relevant implementation context. Canonical workflow paths, ticket paths, kanban, and Git/execution topology are Conductor details, not worker API.
 - Fresh, resume, rework, and recovery prompts share one contract and differ only through a narrow work directive and relevant optional context. Ticket content is opaque assigned data; it cannot authorize canonical workflow mutation.
@@ -126,9 +128,9 @@ blocked, or failed work preserves the same ticket in `todo`.
 - Conductor persists the handled generation, so unchanged todo is not redispatched on every poll or after restart.
 - Dirty and divergent Git states are diagnosed with paths and topology, but Conductor never automatically destroys local changes or reconciles divergent history.
 - Git synchronization and workflow validity are separate boundaries: `merge_pending` covers only an unproven fast-forward transaction and is cleared once the intended HEAD is verified. A later workflow blocker is derived from current control contents and does not reopen that Git transaction.
-- Completed execution submits the same ticket from todo to review. Incomplete, blocked, and failed executions preserve the same ticket in todo while retaining their execution branch and report. Workers report semantic outcomes; Conductor owns ticket movement. No automatic retry or recovery reconciliation is performed.
+- Completed execution submits the same ticket from todo to review. Incomplete, blocked, and failed executions preserve the same ticket in todo while retaining their execution branch and report. Reviewer acceptance moves the same ticket from review to accepted; Conductor integrates accepted checkpoints by fast-forward ancestry only and then moves them to done. No automatic rebase, merge conflict resolution, or recovery reconciliation is performed.
 - Conductor stores per-repository iteration state atomically under `$XDG_STATE_HOME/conductor`, or `~/.local/state/conductor` when XDG_STATE_HOME is unset. Set `STATE_DIR` to override it. Lock files are stored under its `locks` subdirectory.
-- Workers never commit, push, merge, rebase, switch branches, move tickets, write reports, or integrate into the product branch. Product-branch integration remains Conductor-owned but review acceptance and automatic integration are still gated.
+- Workers never commit, push, merge, rebase, switch branches, move tickets, write reports, or integrate into the product branch. Reviewers do not integrate product code; product-branch integration is Conductor-owned.
 - A kernel-managed `flock` prevents concurrent Conductor instances for the same checkout.
 - Agent sessions are intentionally ephemeral for now.
 - Workers receive no control-worktree paths, control branch topology, ticket source paths, execution IDs, or branch identity. Each later attempt keeps the same ticket and execution branch while receiving a new execution ID and report.
