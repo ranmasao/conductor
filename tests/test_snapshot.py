@@ -1,5 +1,3 @@
-import json
-
 import pytest
 from test_cli import git, publish_control, ticket
 
@@ -29,8 +27,7 @@ def test_snapshot_retries_when_runtime_state_changes(git_fixture, monkeypatch):
     def hook(point):
         nonlocal changed
         if point == "after-state-before" and not changed:
-            conductor.state_dir.mkdir(parents=True, exist_ok=True)
-            conductor._state_file.write_text(json.dumps({"phase": "idle", "n": 1}))
+            conductor._runtime_store.replace({"phase": "idle", "n": 1})
             changed = True
 
     monkeypatch.setattr(conductor, "_status_snapshot_hook", hook)
@@ -137,8 +134,7 @@ def test_snapshot_fails_after_continuous_instability(git_fixture, monkeypatch):
         nonlocal count
         if point == "after-state-before":
             count += 1
-            conductor.state_dir.mkdir(parents=True, exist_ok=True)
-            conductor._state_file.write_text(json.dumps({"phase": "idle", "n": count}))
+            conductor._runtime_store.replace({"phase": "idle", "n": count})
 
     monkeypatch.setattr(conductor, "_status_snapshot_hook", hook)
     with pytest.raises(ConductorError, match="project state changed"):
