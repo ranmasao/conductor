@@ -136,7 +136,7 @@ def test_merge_pending_divergence_fails_closed(git_fixture, monkeypatch):
     assert git(git_fixture["working"], "rev-parse", "HEAD").stdout.strip() != target
 
 
-def test_live_agent_running_phase_overrides_stale_recovery_flag(
+def test_agent_running_fails_closed_without_dispatch(
     git_fixture, monkeypatch, capsys
 ):
     publish_control(
@@ -154,15 +154,26 @@ def test_live_agent_running_phase_overrides_stale_recovery_flag(
         control_head=control_head,
         selected_ticket_id="T-1",
         selected_ticket_body="work",
+        execution_ticket_id="T-1",
+        execution_base_head=code_head,
+        execution_control_head=control_head,
+        execution_branch="conductor/work/T-1",
+        execution_path=str(conductor.execution_worktree_root / "work" / "T-1"),
+        execution_id="attempt-1",
+        execution_remote_head=None,
     )
-    conductor._recovery_pending = False
 
-    assert conductor.run_once() == 1
-    assert "execution failed" in capsys.readouterr().out
-    assert state_payload(git_fixture)["phase"] == "idle"
+    restarted = Conductor(git_fixture["config"])
+    calls = []
+    monkeypatch.setattr(restarted, "_run_worker", lambda *_args: calls.append(True))
+    with pytest.raises(ConductorError, match="interrupted execution is ambiguous"):
+        restarted.run_once()
+    assert calls == []
+    assert capsys.readouterr().out == ""
+    assert state_payload(git_fixture)["phase"] == "agent_running"
 
 
-def test_unresolved_agent_phase_survives_repeated_sync_failures(
+def test_unresolved_agent_phase_survives_repeated_runs(
     git_fixture, monkeypatch
 ):
     publish_control(
@@ -180,14 +191,15 @@ def test_unresolved_agent_phase_survives_repeated_sync_failures(
         control_head=control_head,
         selected_ticket_id="T-1",
         selected_ticket_body="work",
+        execution_ticket_id="T-1",
+        execution_base_head=code_head,
+        execution_control_head=control_head,
+        execution_branch="conductor/work/T-1",
+        execution_path=str(conductor.execution_worktree_root / "work" / "T-1"),
+        execution_id="attempt-1",
+        execution_remote_head=None,
     )
-
-    def fail_sync():
-        raise ConductorError("network unavailable")
-
-    monkeypatch.setattr(conductor, "_sync_control", fail_sync)
-    conductor._recovery_pending = False
     for _ in range(2):
-        with pytest.raises(ConductorError, match="network unavailable"):
+        with pytest.raises(ConductorError, match="interrupted execution is ambiguous"):
             conductor.run_once()
     assert state_payload(git_fixture)["phase"] == "agent_running"

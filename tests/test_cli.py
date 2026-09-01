@@ -11,7 +11,6 @@ import pytest
 from conductor.cli import (
     Conductor,
     ConductorError,
-    _has_todo_files,
     _todo_fingerprint,
     build_parser,
     main,
@@ -440,6 +439,10 @@ def test_persisted_execution_requires_control_revision_identity(
         "agent_pending", local_head=code_head, remote_head=code_head,
         changed_paths="", control_head=control_head,
         selected_ticket_id="T-1", selected_ticket_body="work",
+        execution_ticket_id="T-1", execution_base_head=code_head,
+        execution_control_head=control_head, execution_branch="conductor/work/T-1",
+        execution_path=str(conductor.execution_worktree_root / "work" / "T-1"),
+        execution_id="attempt-1", execution_remote_head=None,
     )
     assert conductor._state["control_head"] == control_head
 
@@ -532,7 +535,6 @@ def test_todo_fingerprint_ignores_noncanonical_artifacts(tmp_path):
     first = _todo_fingerprint(tmp_path, "kanban/todo")
     (todo / ".T-1.md.swp").write_text("temporary\n")
     assert _todo_fingerprint(tmp_path, "kanban/todo") == first
-    assert _has_todo_files(tmp_path, "kanban/todo")
 
 
 def test_dirty_diagnostics_include_classes(git_fixture):
@@ -658,3 +660,35 @@ def test_failed_execution_state_requires_product_head():
 
     with pytest.raises(ConductorError, match="failed execution metadata is invalid"):
         Conductor._validate_state_invariant(state)
+
+
+@pytest.mark.parametrize("phase", ["agent_pending", "agent_running"])
+def test_modern_bound_execution_requires_every_identity_field(phase):
+    state = {
+        "phase": phase,
+        "local_head": "local",
+        "remote_head": "remote",
+        "changed_paths": "",
+        "control_head": "control",
+        "selected_ticket_id": "T-1",
+        "selected_ticket_body": "work",
+        "execution_ticket_id": "T-1",
+        "execution_base_head": "base",
+        "execution_control_head": "control",
+        "execution_branch": "conductor/work/T-1",
+        "execution_path": "/state/work/T-1",
+        "execution_id": "attempt-1",
+        "execution_remote_head": None,
+    }
+    for field in (
+        "execution_ticket_id",
+        "execution_base_head",
+        "execution_control_head",
+        "execution_branch",
+        "execution_path",
+        "execution_id",
+        "execution_remote_head",
+    ):
+        incomplete = {key: value for key, value in state.items() if key != field}
+        with pytest.raises(ConductorError, match="execution workspace binding"):
+            Conductor._validate_state_invariant(incomplete)
