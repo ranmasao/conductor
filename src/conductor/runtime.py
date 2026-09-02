@@ -1796,6 +1796,13 @@ class Conductor:
         try:
             checkpoint = manager.checkpoint(workspace, execution_id)
         except (ExecutionWorkspaceError, OSError) as error:
+            self._record_post_worker_failure(
+                selected_ticket.id,
+                execution_id,
+                local_head,
+                remote_head,
+                str(error),
+            )
             raise ConductorError(f"execution checkpoint failed: {error}") from error
         _log(
             "execution checkpoint "
@@ -1809,6 +1816,13 @@ class Conductor:
                 self._state.get("execution_remote_head"),
             )
         except (ConductorError, OSError) as error:
+            self._record_post_worker_failure(
+                selected_ticket.id,
+                execution_id,
+                local_head,
+                remote_head,
+                str(error),
+            )
             raise ConductorError(
                 f"execution branch publication failed: {error}"
             ) from error
@@ -1819,6 +1833,13 @@ class Conductor:
         try:
             control_head = self._apply_execution_lifecycle(report)
         except (ConductorError, OSError, ExecutionReportError) as error:
+            self._record_post_worker_failure(
+                selected_ticket.id,
+                execution_id,
+                local_head,
+                remote_head,
+                str(error),
+            )
             raise ConductorError(f"control-plane lifecycle failed: {error}") from error
         todo_fingerprint, _todo_count = _todo_fingerprint(
             self.control_worktree, self.todo_path
