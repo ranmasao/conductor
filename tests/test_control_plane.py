@@ -14,6 +14,7 @@ import conductor.cli as cli
 import conductor.execution_workspace as execution_workspace
 import conductor.runtime as runtime
 from conductor.cli import Conductor, ConductorError
+from conductor.execution_result import ExecutionReport, ExecutionReportStore
 from conductor.execution_workspace import (
     ExecutionWorkspaceError,
     ExecutionWorkspaceManager,
@@ -424,6 +425,117 @@ def test_run_worker_completes_one_lifecycle_attempt(tmp_path):
     assert "execution failed" in result.stdout
     control = next((state / "worktrees").glob("*/control"))
     assert list((control / "executions/T-1").glob("*.json"))
+
+
+def test_lifecycle_reconciles_compatible_control_descendant_without_worker(
+    tmp_path, monkeypatch
+):
+    working, config, state = control_fixture(tmp_path)
+    assert invoke(working, "control", "init", config=config).returncode == 0
+    monkeypatch.chdir(working)
+    conductor = Conductor(config)
+
+    def worker(_workspace, _prompt):
+        return WorkerRunResult(1, None, None, None)
+
+    monkeypatch.setattr(conductor, "_run_worker", worker)
+    monkeypatch.setattr(
+        conductor,
+        "_apply_execution_lifecycle",
+        lambda _report: (_ for _ in ()).throw(
+            ConductorError("simulated lifecycle interruption")
+        ),
+    )
+    with pytest.raises(ConductorError, match="simulated lifecycle interruption"):
+        conductor.run_once()
+    payload = state_payload(state)
+    original_control = payload["execution_control_head"]
+
+    architect = tmp_path / "architect"
+    git(tmp_path, "clone", tmp_path / "remote.git", architect)
+    git(architect, "config", "user.email", "test@example.com")
+    git(architect, "config", "user.name", "Test User")
+    git(architect, "switch", "-c", "architect-control", "origin/conductor/control")
+    (architect / "kanban/todo/T-2.md").write_text(
+        '---\n"type": "conductor.ticket"\n"title": "Future"\n---\nfuture\n'
+    )
+    git(architect, "add", "-A")
+    git(architect, "commit", "-m", "add future ticket")
+    descendant = git(architect, "rev-parse", "HEAD").stdout.strip()
+    git(architect, "push", "origin", "HEAD:refs/heads/conductor/control")
+    control = next((state / "worktrees").glob("*/control"))
+
+    recovered = Conductor(config)
+    monkeypatch.setattr(
+        recovered,
+        "_run_worker",
+        lambda *_args: pytest.fail("lifecycle recovery launched a worker"),
+    )
+    assert recovered.run_once() == 1
+    assert recovered._state["phase"] == "idle"
+    assert (control / "kanban/todo/T-1.md").is_file()
+    assert (control / "kanban/todo/T-2.md").is_file()
+    lifecycle = git(control, "rev-parse", "HEAD").stdout.strip()
+    assert git(control, "rev-parse", f"{lifecycle}^").stdout.strip() == descendant
+    report_path = next((control / "executions/T-1").glob("*.json"))
+    report = json.loads(report_path.read_text())
+    assert report["control_head"] == original_control
+
+
+def test_legacy_lifecycle_commit_replays_on_control_descendant_without_worker(
+    tmp_path, monkeypatch
+):
+    working, config, state = control_fixture(tmp_path)
+    assert invoke(working, "control", "init", config=config).returncode == 0
+    monkeypatch.chdir(working)
+    conductor = Conductor(config)
+
+    monkeypatch.setattr(
+        conductor,
+        "_run_worker",
+        lambda _workspace, _prompt: WorkerRunResult(1, None, None, None),
+    )
+    monkeypatch.setattr(
+        conductor,
+        "_apply_execution_lifecycle",
+        lambda _report: (_ for _ in ()).throw(
+            ConductorError("simulated lifecycle interruption")
+        ),
+    )
+    with pytest.raises(ConductorError, match="simulated lifecycle interruption"):
+        conductor.run_once()
+    pending = conductor._state["pending_execution_report"]
+    report = ExecutionReport.from_dict(pending)
+    original_apply = Conductor._apply_lifecycle_once
+    original_apply(conductor, report)
+    legacy_state = dict(conductor._state)
+    legacy_state.pop("pending_execution_report")
+    conductor._runtime_store.replace(legacy_state)
+
+    architect = tmp_path / "architect"
+    git(tmp_path, "clone", tmp_path / "remote.git", architect)
+    git(architect, "config", "user.email", "test@example.com")
+    git(architect, "config", "user.name", "Test User")
+    git(architect, "switch", "-c", "architect-control", "origin/conductor/control")
+    (architect / "kanban/todo/T-2.md").write_text(
+        '---\n"type": "conductor.ticket"\n"title": "Future"\n---\nfuture\n'
+    )
+    git(architect, "add", "-A")
+    git(architect, "commit", "-m", "add future ticket")
+    git(architect, "push", "origin", "HEAD:refs/heads/conductor/control")
+
+    control = next((state / "worktrees").glob("*/control"))
+    recovered = Conductor(config)
+    monkeypatch.setattr(
+        recovered,
+        "_run_worker",
+        lambda *_args: pytest.fail("legacy lifecycle recovery launched a worker"),
+    )
+    assert recovered.run_once() == 1
+    assert recovered._state["phase"] == "idle"
+    assert (control / "kanban/todo/T-1.md").is_file()
+    assert (control / "kanban/todo/T-2.md").is_file()
+    assert ExecutionReportStore(control).read("T-1", report.execution_id) == report
 
 
 def test_execution_start_head_is_persisted_before_worker(tmp_path, monkeypatch):
