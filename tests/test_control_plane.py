@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -11,13 +12,14 @@ import pytest
 
 import conductor.cli as cli
 import conductor.execution_workspace as execution_workspace
+import conductor.runtime as runtime
 from conductor.cli import Conductor, ConductorError
 from conductor.execution_workspace import (
     ExecutionWorkspaceError,
     ExecutionWorkspaceManager,
     parse_worktree_porcelain,
 )
-from conductor.runtime import _todo_fingerprint
+from conductor.runtime import _capture_worker_identity, _todo_fingerprint
 from conductor.worker_egress import WorkerClaim, WorkerRunResult
 
 
@@ -89,6 +91,14 @@ def persist_agent_running(
         execution_path=str(workspace.path),
         execution_id=execution_id,
         execution_remote_head=workspace.head if publish else None,
+        worker_identity={
+            "execution_id": execution_id,
+            "pid": 1,
+            "pgid": 1,
+            "sid": 1,
+            "boot_id": "test-prior-boot",
+            "start_time": 0,
+        },
         **(
             {"execution_start_head": execution_start_head}
             if record_start
@@ -837,6 +847,99 @@ def test_persisted_agent_running_still_refuses_ordinary_restart(tmp_path, monkey
         conductor.run_once()
 
     assert conductor._state["phase"] == "agent_running"
+
+
+def test_stranded_agent_running_without_worker_identity_refuses_retry(
+    tmp_path, monkeypatch
+):
+    working, config, state = control_fixture(tmp_path)
+    assert invoke(working, "control", "init", config=config).returncode == 0
+    monkeypatch.chdir(working)
+    conductor = Conductor(config)
+    persist_agent_running(conductor, state)
+    conductor._save_state("agent_running", worker_identity=None)
+    calls = []
+    monkeypatch.setattr(conductor, "_run_worker", lambda *_args: calls.append(True))
+
+    with pytest.raises(ConductorError, match="ownership cannot be proven absent"):
+        conductor.retry("T-1")
+    assert calls == []
+
+
+def test_matching_live_worker_identity_refuses_retry_without_signaling(
+    tmp_path, monkeypatch
+):
+    working, config, state = control_fixture(tmp_path)
+    assert invoke(working, "control", "init", config=config).returncode == 0
+    monkeypatch.chdir(working)
+    conductor = Conductor(config)
+    persist_agent_running(conductor, state)
+    helper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        start_new_session=True,
+    )
+    try:
+        identity = _capture_worker_identity(helper, conductor._state["execution_id"])
+        conductor._save_state("agent_running", worker_identity=identity.as_dict())
+        calls = []
+        monkeypatch.setattr(
+            conductor, "_run_worker", lambda *_args: calls.append(True)
+        )
+
+        with pytest.raises(ConductorError, match="worker is still alive"):
+            conductor.retry("T-1")
+        assert calls == []
+        assert helper.poll() is None
+    finally:
+        os.killpg(os.getpgid(helper.pid), signal.SIGKILL)
+        helper.wait()
+
+
+def test_worker_identity_observer_rejects_pid_reuse_without_signaling(monkeypatch):
+    identity = runtime.WorkerProcessIdentity(
+        "execution-1", 123, 123, 123, "boot-1", 10
+    )
+    signals = []
+    monkeypatch.setattr(runtime, "_linux_boot_id", lambda: "boot-1")
+    monkeypatch.setattr(runtime, "_linux_process_start_time", lambda _pid: 11)
+    monkeypatch.setattr(runtime, "_worker_group_exists", lambda _pgid: False)
+    monkeypatch.setattr(runtime.os, "killpg", lambda *args: signals.append(args))
+
+    assert runtime.observe_worker_identity(identity) == "absent"
+    assert signals == []
+
+
+def test_worker_identity_observer_blocks_when_leader_is_gone_but_group_survives(
+    monkeypatch,
+):
+    identity = runtime.WorkerProcessIdentity(
+        "execution-1", 123, 456, 456, "boot-1", 10
+    )
+    monkeypatch.setattr(runtime, "_linux_boot_id", lambda: "boot-1")
+    monkeypatch.setattr(
+        runtime,
+        "_linux_process_start_time",
+        lambda _pid: (_ for _ in ()).throw(FileNotFoundError),
+    )
+    monkeypatch.setattr(runtime, "_worker_group_exists", lambda _pgid: True)
+
+    assert runtime.observe_worker_identity(identity) == "indeterminate"
+
+
+def test_worker_identity_observer_treats_boot_change_as_absent_without_group_probe(
+    monkeypatch,
+):
+    identity = runtime.WorkerProcessIdentity(
+        "execution-1", 123, 123, 123, "old-boot", 10
+    )
+    probes = []
+    monkeypatch.setattr(runtime, "_linux_boot_id", lambda: "new-boot")
+    monkeypatch.setattr(
+        runtime, "_worker_group_exists", lambda pgid: probes.append(pgid) or True
+    )
+
+    assert runtime.observe_worker_identity(identity) == "absent"
+    assert probes == []
 
 
 def test_locked_agent_running_cannot_be_recovered(tmp_path, monkeypatch):
