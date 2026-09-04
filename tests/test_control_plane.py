@@ -1307,11 +1307,32 @@ def test_check_reports_active_runtime_when_mutation_owner_is_live(
     persist_agent_running(conductor, state)
 
     with conductor._lock():
+        monkeypatch.setattr(
+            runtime.fcntl,
+            "flock",
+            lambda *_args: pytest.fail("check attempted to acquire mutation lock"),
+        )
         assert conductor.check() == 0
     output = capsys.readouterr().out
     assert "OK    runtime state" in output
     assert "mutation owner is active" in output
     assert "\nReady." in output
+
+
+def test_mutation_owner_probe_reports_unlocked_without_acquiring(
+    tmp_path, monkeypatch
+):
+    working, config, _state = control_fixture(tmp_path)
+    assert invoke(working, "control", "init", config=config).returncode == 0
+    monkeypatch.chdir(working)
+    conductor = Conductor(config)
+    monkeypatch.setattr(
+        runtime.fcntl,
+        "flock",
+        lambda *_args: pytest.fail("probe attempted to acquire mutation lock"),
+    )
+
+    assert conductor._mutation_owner_live() is False
 
 
 @pytest.mark.skipif(os.name != "posix", reason="requires POSIX process identity")
