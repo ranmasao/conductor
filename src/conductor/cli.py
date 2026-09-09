@@ -10,11 +10,17 @@ from conductor import __version__
 from conductor import runtime as _runtime
 from conductor.agent_protocol import AgentProtocolError, seed_project_env
 from conductor.daemon import run_daemon, run_foreground
+from conductor.ipc_client import IPCClientError, decode_plan, decode_status, request
 from conductor.runtime import (
     ConductorError,
     ExecutionPlan,
     StatusSnapshot,
     WorkflowBlockedError,
+)
+from conductor.runtime_locator import (
+    RuntimeAuthorityPresent,
+    RuntimeLocator,
+    RuntimeLocatorError,
 )
 from conductor.service import ServiceEngine
 
@@ -38,6 +44,44 @@ def _service_engine(env_file: Path, *, read_only: bool = False) -> ServiceEngine
     if compatibility_type is not _runtime.ServiceEngine:
         return compatibility_type(env_file, read_only=read_only)
     return ServiceEngine(env_file, read_only=read_only)
+
+
+def _read_only_view(env_file: Path, method: str) -> StatusSnapshot | ExecutionPlan:
+    try:
+        locator = RuntimeLocator.from_env(env_file)
+    except RuntimeLocatorError as error:
+        raise ConductorError(str(error)) from error
+
+    response: dict[str, object] | None = None
+    ipc_error: IPCClientError | None = None
+    try:
+        response = request(locator.socket_path, method)
+    except IPCClientError as error:
+        ipc_error = error
+
+    try:
+        guard = locator.absence_guard()
+        with guard:
+            engine = _service_engine(env_file, read_only=True)
+            if method == "status":
+                view = getattr(engine, "status_view", engine.status)
+            else:
+                view = getattr(engine, "plan_view", engine.plan)
+            return view()
+    except RuntimeAuthorityPresent as error:
+        if ipc_error is not None:
+            if ipc_error.application:
+                raise ConductorError(str(ipc_error)) from ipc_error
+            raise ConductorError(str(error)) from ipc_error
+        assert response is not None
+        try:
+            return (
+                decode_status(response) if method == "status" else decode_plan(response)
+            )
+        except IPCClientError as decode_error:
+            raise ConductorError(str(decode_error)) from decode_error
+    except RuntimeLocatorError as error:
+        raise ConductorError(str(error)) from error
 
 
 def _render_status_text(snapshot: StatusSnapshot) -> str:
@@ -355,7 +399,7 @@ def main() -> int:
         if args.command == "control":
             return conductor.control_init()
         if args.command == "status":
-            snapshot = _service_engine(env_file, read_only=True).status()
+            snapshot = _read_only_view(env_file, "status")
             print(
                 json.dumps(snapshot.as_dict(), indent=2, sort_keys=True)
                 if args.json
@@ -363,7 +407,7 @@ def main() -> int:
             )
             return 1 if snapshot.plan.action == "blocked" else 0
         if args.command == "plan":
-            plan = _service_engine(env_file, read_only=True).plan()
+            plan = _read_only_view(env_file, "plan")
             print(
                 json.dumps(plan.as_dict(), indent=2, sort_keys=True)
                 if args.json
