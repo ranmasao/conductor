@@ -17,6 +17,8 @@ from conductor.ipc_protocol import (
 )
 from conductor.runtime import ConductorError
 
+UNIX_SOCKET_PATH_MAX_BYTES = 107
+
 
 def dispatch_read_only(engine: object, request: IPCRequest) -> dict[str, object]:
     """Dispatch only the read-only E1 methods through the service API."""
@@ -42,6 +44,13 @@ class UnixIPCServer:
         self._stop = threading.Event()
 
     def start(self) -> None:
+        path_bytes = len(str(self.path).encode())
+        if path_bytes > UNIX_SOCKET_PATH_MAX_BYTES:
+            raise ConductorError(
+                "IPC socket path is too long for Unix-domain sockets: "
+                f"{self.path} ({path_bytes} bytes; maximum is "
+                f"{UNIX_SOCKET_PATH_MAX_BYTES})"
+            )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if self.path.exists():
             if not self.path.is_socket():
