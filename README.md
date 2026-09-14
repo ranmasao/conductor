@@ -1,5 +1,8 @@
 # Conductor
 
+[![CI](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml/badge.svg?branch=feature%2Fv0.5.0-state-control-separation)](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml)
+[![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ranmasao/conductor/badges/coverage.json)](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml)
+
 Conductor is a local deterministic orchestrator for agent-driven software development workflows. Product code remains on the configured product branch and canonical workflow files live only on `CONTROL_BRANCH` (default `conductor/control`) in a Conductor-owned worktree outside the product checkout.
 
 Conductor maintains three physically separate Git surfaces: the operator checkout, the canonical control worktree, and a per-ticket execution worktree. Workers edit implementation files and provide a semantic claim; Conductor checkpoints, publishes, reports, and mutates workflow state.
