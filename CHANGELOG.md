@@ -1,9 +1,32 @@
 # Changelog
 
-This file records notable changes to Conductor by released version. Entries are
-ordered from the current release back to the first working release. They describe
-the state shipped at each version; intermediate implementation steps that were
-superseded before a release are not treated as separate product behavior.
+This file records notable changes to Conductor by release, with current
+unreleased work first. Released entries are ordered from the current release
+back to the first working release. They describe the state shipped at each
+version; intermediate implementation steps that were superseded before a release
+are not treated as separate product behavior.
+
+## Unreleased
+
+Current development changes for the next 0.5 release:
+
+### Added
+
+- Added a foreground service that owns active workflow execution while CLI clients
+  observe status and submit supported operations through it.
+- Added SQLite-backed local runtime state separate from product and workflow Git
+  history.
+- Added explicit retry and product-base reconciliation operations, including
+  handling for safely recoverable interruptions.
+- Added NanoYAML 0.2.0 flow-sequence support and CI coverage reporting.
+
+### Changed
+
+- Separated the product checkout, workflow control history, and per-ticket
+  execution workspaces more clearly in the current architecture and documentation.
+- Clarified that workers edit code while Conductor owns checkpointing, publication,
+  workflow movement, reports, review handoff, and accepted integration.
+- Improved CLI help and service terminology across public commands and errors.
 
 ## 0.4.0 — 2026-09-01
 
