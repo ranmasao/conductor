@@ -53,14 +53,16 @@ it is not a replacement for Git history.
 
 ## Current 0.5 Limitations
 
-Conductor 0.5 is unreleased. The current implementation has these practical
-limits:
+- Conductor 0.5 is unreleased.
+
+The current implementation has these practical limits:
 
 - Workflow execution is serial; general parallel worker execution is not
   implemented yet.
 - Active workflow execution is hosted by a foreground process.
 - Conductor does not provide system-service or background-process integration.
 - There is no warm worker pool; worker sessions are ephemeral.
+- Full YAML compatibility is not provided.
 
 ## Quick Start
 
@@ -105,6 +107,3 @@ integrated into product history.
 ```
 
 Coverage is diagnostic; there is no percentage gate.
-
-Conductor 0.5 is an unreleased development architecture. Full YAML
-compatibility is not provided.
