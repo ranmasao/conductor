@@ -1,6 +1,6 @@
 # Conductor
 
-[![CI](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml/badge.svg?branch=feature%2Fv0.5.0-state-control-separation)](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml)
+[![CI](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml/badge.svg)](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml)
 [![Coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ranmasao/conductor/badges/coverage.json)](https://github.com/ranmasao/conductor/actions/workflows/ci.yaml)
 
 Conductor runs coding work from explicit tickets. The coding agent writes the
