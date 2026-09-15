@@ -59,8 +59,9 @@ The current implementation has these practical limits:
 
 - Workflow execution is serial; general parallel worker execution is not
   implemented yet.
-- Active workflow execution is hosted by a foreground process.
-- Conductor does not provide system-service or background-process integration.
+- Active workflow execution is hosted by one persistent Conductor service.
+- Bare `conductor` starts the service in the background; use `conductor
+  --foreground` to keep it attached to the current terminal.
 - There is no warm worker pool; worker sessions are ephemeral.
 - Full YAML compatibility is not provided.
 
@@ -75,7 +76,7 @@ conductor init
 # configure .env and project context
 conductor control init
 conductor check
-conductor run
+conductor
 ```
 
 Useful read-only and recovery commands:
@@ -88,8 +89,9 @@ conductor retry
 
 `init` creates missing project-owned setup files without starting execution.
 `control init` prepares the separate workflow history. `check` validates the
-project before work starts. `run` hosts the service in the foreground; use
-`run --once` for one synchronization and execution pass.
+project before work starts. Bare `conductor` starts the persistent service;
+use `--foreground` to attach it or `--once` for one synchronization and
+execution pass. Use `conductor stop` for orderly shutdown.
 
 ## Workflow
 

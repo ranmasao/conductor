@@ -28,7 +28,7 @@ or unexpectedly occupied worktree is refused.
 
 ## Runtime Service
 
-The production runtime is one foreground service hosting one `ServiceEngine`.
+The production runtime is one persistent service hosting one `ServiceEngine`.
 The service host owns the project runtime lock and local Unix IPC endpoint.
 `ServiceEngine` is the single mutable workflow engine: it makes workflow
 decisions, runs workers, and performs service operations.
@@ -38,11 +38,11 @@ Mutable operations are admitted and serialized by the service owner. The
 service owns ticket movement, worker execution, checkpoint commits, publication,
 reports, and accepted product integration.
 
-`conductor run` is the primary service command. It stays in the foreground;
-`conductor run --once` performs one synchronization and execution pass. The
-supported `conductor daemon` command is also foreground-hosted and does not
-detach. Conductor does not provide a system service or hidden background
-process.
+Bare `conductor` starts the persistent service in the background. `conductor
+--foreground` hosts the same service in the current terminal, and `conductor
+--once` performs one synchronization and execution pass. `conductor stop`
+requests orderly shutdown through the service IPC endpoint. The service is
+managed directly by Conductor and does not require an external service manager.
 
 ## Runtime State
 
