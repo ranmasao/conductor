@@ -12,8 +12,11 @@ Current development changes for the next 0.5 release:
 
 ### Added
 
-- Added a foreground service that owns active workflow execution while CLI clients
-  observe status and submit supported operations through it.
+- Added a persistent service that owns active workflow execution while CLI clients
+  observe status and submit supported operations through it. Bare `conductor`
+  starts it detached; `--foreground` runs it attached to the current terminal;
+  `--once` performs one synchronization and execution pass; and `conductor stop`
+  requests orderly shutdown.
 - Added SQLite-backed local runtime state separate from product and workflow Git
   history.
 - Added explicit retry and product-base reconciliation operations, including
@@ -27,6 +30,9 @@ Current development changes for the next 0.5 release:
 - Clarified that workers edit code while Conductor owns checkpointing, publication,
   workflow movement, reports, review handoff, and accepted integration.
 - Improved CLI help and service terminology across public commands and errors.
+- Removed the public `run` and `daemon` service commands in favor of the final
+  persistent-service forms. Repeated start requests are idempotent when a healthy
+  service owner already exists.
 
 ## 0.4.0 — 2026-09-01
 

@@ -1,4 +1,4 @@
-"""The single production authority for foreground runtime operations."""
+"""The single production authority for persistent runtime operations."""
 
 from conductor.runtime import ServiceEngine, ServiceSnapshot
 
